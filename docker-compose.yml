@@ -1,0 +1,97 @@
+services:
+  jellyfin:
+    image: lscr.io/linuxserver/jellyfin:latest
+    container_name: jellyfin
+    environment:
+      - PUID=501
+      - PGID=20
+      - TZ=${TZ}
+    volumes:
+      - ./config/jellyfin:/config
+      - ./media:/media
+    ports:
+      - 8096:8096
+      - 7359:7359/udp
+    restart: unless-stopped
+
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: sonarr
+    environment:
+      - PUID=501
+      - PGID=20
+      - TZ=${TZ}
+    volumes:
+      - ./config/sonarr:/config
+      - ./media:/media
+      - ./media/downloads:/downloads
+    ports:
+      - 8989:8989
+    restart: unless-stopped
+
+  radarr:
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: radarr
+    environment:
+      - PUID=501
+      - PGID=20
+      - TZ=${TZ}
+    volumes:
+      - ./config/radarr:/config
+      - ./media:/media
+      - ./media/downloads:/downloads
+    ports:
+      - 7878:7878
+    restart: unless-stopped
+
+  nzbget:
+    image: nzbgetcom/nzbget:latest
+    container_name: nzbget
+    environment:
+      - PUID=501
+      - PGID=20
+      - TZ=${TZ}
+      - NZBGET_USER=${NZBGET_USER}
+      - NZBGET_PASS=${NZBGET_PASS}
+    volumes:
+      - ./config/nzbget:/config
+      - ./media:/media
+      - ./media/downloads:/downloads
+    ports:
+      - 6789:6789
+    restart: unless-stopped
+
+  bootstrap:
+    image: alpine:3.21
+    container_name: mediaserver-bootstrap
+    depends_on:
+      - jellyfin
+      - sonarr
+      - radarr
+      - nzbget
+    environment:
+      - TZ=${TZ}
+      - JELLYFIN_USERNAME=${JELLYFIN_USERNAME}
+      - JELLYFIN_PASSWORD=${JELLYFIN_PASSWORD}
+      - MOVIE_PATH=${MOVIE_PATH}
+      - SHOW_PATH=${SHOW_PATH}
+      - NZBGET_USER=${NZBGET_USER}
+      - NZBGET_PASS=${NZBGET_PASS}
+      - NZBGET_NEWS_HOST=${NZBGET_NEWS_HOST:-}
+      - NZBGET_NEWS_PORT=${NZBGET_NEWS_PORT:-563}
+      - NZBGET_NEWS_USER=${NZBGET_NEWS_USER:-}
+      - NZBGET_NEWS_PASS=${NZBGET_NEWS_PASS:-}
+      - NZBGET_NEWS_CONNECTIONS=${NZBGET_NEWS_CONNECTIONS:-8}
+      - NZBGET_ARTICLE_CACHE=${NZBGET_ARTICLE_CACHE:-256}
+      - NZBGET_WRITE_BUFFER=${NZBGET_WRITE_BUFFER:-1024}
+      - NEWZNAB_URL=${NEWZNAB_URL:-}
+      - NEWZNAB_API=${NEWZNAB_API:-}
+      - NEWZNAB_NAME=${NEWZNAB_NAME:-Newznab}
+    volumes:
+      - ./scripts/bootstrap.sh:/bootstrap.sh:ro
+      - ./config/sonarr:/sonarr:ro
+      - ./config/radarr:/radarr:ro
+      - ./config/nzbget:/nzbget
+      - ./media/downloads:/downloads
+    entrypoint: ["/bin/sh", "/bootstrap.sh"]
+    restart: "no"
