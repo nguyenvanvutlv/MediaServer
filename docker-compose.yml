@@ -14,6 +14,31 @@ services:
       - 7359:7359/udp
     restart: unless-stopped
 
+  plex:
+    image: lscr.io/linuxserver/plex:latest
+    container_name: plex
+    hostname: plex
+    environment:
+      - PUID=501
+      - PGID=20
+      - TZ=${TZ}
+      - VERSION=docker
+      - PLEX_CLAIM=${PLEX_CLAIM:-}
+      - ADVERTISE_IP=http://${PLEX_ADVERTISE_HOST:-127.0.0.1}:32400/
+    volumes:
+      - ./config/plex:/config
+      - ./config/plex-transcode:/transcode
+      - ./media:/media
+    ports:
+      - 32400:32400
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -H 'Accept: application/json' http://127.0.0.1:32400/identity >/dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    restart: unless-stopped
+
   sonarr:
     image: lscr.io/linuxserver/sonarr:latest
     container_name: sonarr

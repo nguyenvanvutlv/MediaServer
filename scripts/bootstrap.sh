@@ -12,7 +12,7 @@ die() {
 
 need_env() {
   eval "val=\${$1-}"
-  [ -n "$val" ] || die "thieu bien $1 trong .env"
+  [ -n "$val" ] || die "missing variable $1 in .env"
 }
 
 need_env JELLYFIN_USERNAME
@@ -61,7 +61,7 @@ wait_file_key() {
     i=$((i + 1))
     sleep 2
   done
-  die "khong doc duoc ApiKey tu $file"
+  die "Can't read ApiKey from $file"
 }
 
 wait_arr() {
@@ -76,7 +76,7 @@ wait_arr() {
     i=$((i + 1))
     sleep 2
   done
-  die "API $url chua san sang"
+  die "API $url is not ready"
 }
 
 jellyfin_token() {
@@ -97,7 +97,7 @@ ensure_jellyfin_library() {
   if echo "$folders" | jq -e --arg name "$name" --arg path "$path" '
       any(.[]; .Name == $name or ((.Locations // []) | index($path)))
     ' >/dev/null; then
-    log "Jellyfin da co library $name ($path)"
+    log "Jellyfin have library $name ($path)"
     return 0
   fi
 
@@ -110,10 +110,10 @@ ensure_jellyfin_library() {
     -d "$body")
 
   if [ "$code" != "204" ] && [ "$code" != "200" ]; then
-    die "khong tao duoc library $name (HTTP $code): $(cat /tmp/jf-lib.json)"
+    die "can't create library $name (HTTP $code): $(cat /tmp/jf-lib.json)"
   fi
 
-  log "Jellyfin da them library $name -> $path"
+  log "Jellyfin had added library $name -> $path"
 }
 
 ensure_arr_root() {
@@ -124,7 +124,7 @@ ensure_arr_root() {
 
   folders=$(curl -sf --max-time 15 -H "X-Api-Key: $key" "$url/api/v3/rootfolder")
   if echo "$folders" | jq -e --arg path "$path" 'any(.[]; .path == $path or .path == ($path + "/"))' >/dev/null; then
-    log "$name da co root folder $path"
+    log "$name have folder $path"
     return 0
   fi
 
@@ -136,10 +136,10 @@ ensure_arr_root() {
     -d "$body")
 
   if [ "$code" != "201" ] && [ "$code" != "200" ]; then
-    die "khong tao duoc root folder $path tren $name (HTTP $code): $(cat /tmp/arr-root.json)"
+    die "can't root folder $path tren $name (HTTP $code): $(cat /tmp/arr-root.json)"
   fi
 
-  log "$name da them root folder $path"
+  log "$name added root folder $path"
 }
 
 nzbget_rpc() {
@@ -149,9 +149,9 @@ nzbget_rpc() {
   resp=$(curl -s --max-time 15 -u "$NZBGET_USER:$NZBGET_PASS" \
     -H "Content-Type: application/json" \
     -d "$body" \
-    "$NZBGET_URL/jsonrpc") || die "khong goi duoc NZBGet $method"
+    "$NZBGET_URL/jsonrpc") || die "can't call NZBGet $method"
   if echo "$resp" | jq -e '.error != null' >/dev/null; then
-    die "NZBGet $method that bai: $(echo "$resp" | jq -c '.error')"
+    die "NZBGet $method failed: $(echo "$resp" | jq -c '.error')"
   fi
   printf '%s' "$resp"
 }
@@ -160,7 +160,7 @@ NZBGET_CONF="${NZBGET_CONF:-/nzbget/nzbget.conf}"
 
 nzbget_set_conf() {
   file=$NZBGET_CONF
-  [ -f "$file" ] || die "khong thay $file"
+  [ -f "$file" ] || die "not found $file"
   NZBGET_OPT_NAME=$1 NZBGET_OPT_VALUE=$2 awk '
     BEGIN {
       name = ENVIRON["NZBGET_OPT_NAME"]
@@ -215,7 +215,7 @@ wait_nzbget() {
     i=$((i + 1))
     sleep 2
   done
-  die "het thoi gian cho NZBGet"
+  die "timeout NZBGet"
 }
 
 ensure_download_dirs() {
@@ -235,12 +235,12 @@ ensure_download_dirs() {
     AppendCategoryDir yes \
     ArticleCache "${NZBGET_ARTICLE_CACHE:-256}" \
     WriteBuffer "${NZBGET_WRITE_BUFFER:-1024}"
-  log "da tao /downloads/completed/{Movies,Series}"
+  log "created /downloads/completed/{Movies,Series}"
 }
 
 ensure_nzbget_news_server() {
   if [ -z "${NZBGET_NEWS_HOST:-}" ]; then
-    log "bo qua news server: NZBGET_NEWS_HOST trong .env dang trong"
+    log "NZBGET_NEWS_HOST is empty in .env"
     return 0
   fi
 
@@ -258,7 +258,7 @@ ensure_nzbget_news_server() {
     set -- "$@" Server1.Password "$NZBGET_NEWS_PASS"
   fi
   nzbget_apply_config "$@"
-  log "NZBGet da gan news server $NZBGET_NEWS_HOST"
+  log "NZBGet had added news server $NZBGET_NEWS_HOST"
 }
 
 ensure_arr_nzbget() {
@@ -270,7 +270,7 @@ ensure_arr_nzbget() {
 
   existing=$(curl -sf --max-time 15 -H "X-Api-Key: $key" "$url/api/v3/downloadclient")
   if echo "$existing" | jq -e 'any(.[]; .implementation == "Nzbget")' >/dev/null; then
-    log "$name da co download client NZBGet"
+    log "$name download client NZBGet"
     return 0
   fi
 
@@ -431,18 +431,18 @@ ensure_arr_jellyfin() {
     -d "$body")
 
   if [ "$code" != "201" ] && [ "$code" != "200" ]; then
-    die "khong noi duoc $name voi Jellyfin (HTTP $code): $(cat /tmp/arr-jf.json)"
+    die "can't connect $name with Jellyfin (HTTP $code): $(cat /tmp/arr-jf.json)"
   fi
 
-  log "$name da noi Jellyfin (update library khi import xong)"
+  log "$name connected Jellyfin (update library when imported)"
 }
 
-log "cho NZBGet san sang"
+log "wait NZBGet ready"
 wait_nzbget
 ensure_download_dirs
 ensure_nzbget_news_server
 
-log "cho Jellyfin san sang"
+log "wait Jellyfin ready"
 wait_url "$JELLYFIN_URL/System/Info/Public"
 
 wizard_done=$(curl -s --max-time 10 "$JELLYFIN_URL/System/Info/Public" | jq -r '.StartupWizardCompleted // empty')
@@ -460,7 +460,7 @@ if [ "$wizard_done" != "true" ]; then
     -H "Content-Type: application/json" \
     -d "$user_body")
   if [ "$user_code" != "204" ] && [ "$user_code" != "200" ]; then
-    die "khong tao duoc user Jellyfin (HTTP $user_code): $(cat /tmp/jf-user.json)"
+    die "can't user Jellyfin (HTTP $user_code): $(cat /tmp/jf-user.json)"
   fi
 
   curl -s --max-time 15 -X POST "$JELLYFIN_URL/Startup/RemoteAccess" \
@@ -468,21 +468,21 @@ if [ "$wizard_done" != "true" ]; then
     -d '{"EnableRemoteAccess":true,"EnableAutomaticPortMapping":false}' >/dev/null || true
 fi
 
-token=$(jellyfin_token) || die "khong dang nhap Jellyfin duoc. Kiem tra JELLYFIN_USERNAME / JELLYFIN_PASSWORD trong .env"
+token=$(jellyfin_token) || die "can't Jellyfin. Check JELLYFIN_USERNAME / JELLYFIN_PASSWORD in .env"
 ensure_jellyfin_library "Movies" "movies" "$MOVIE_PATH" "$token"
 ensure_jellyfin_library "Shows" "tvshows" "$SHOW_PATH" "$token"
 
 if [ "$wizard_done" != "true" ]; then
   curl -sf --max-time 15 -X POST "$JELLYFIN_URL/Startup/Complete" >/dev/null
-  log "Jellyfin wizard da complete"
+  log "Jellyfin wizard completed"
 fi
 
-log "cho Sonarr san sang"
+log "wait Sonarr ready"
 sonarr_key=$(wait_file_key /sonarr/config.xml)
 wait_arr "$SONARR_URL" "$sonarr_key"
 ensure_arr_root "Sonarr" "$SONARR_URL" "$sonarr_key" "$SHOW_PATH"
 
-log "cho Radarr san sang"
+log "wait Radarr ready"
 radarr_key=$(wait_file_key /radarr/config.xml)
 wait_arr "$RADARR_URL" "$radarr_key"
 ensure_arr_root "Radarr" "$RADARR_URL" "$radarr_key" "$MOVIE_PATH"
@@ -492,9 +492,9 @@ ensure_arr_nzbget "Radarr" "$RADARR_URL" "$radarr_key" "movieCategory" "Movies"
 ensure_arr_newznab "Sonarr" "$SONARR_URL" "$sonarr_key" '[5030,5040,5045]'
 ensure_arr_newznab "Radarr" "$RADARR_URL" "$radarr_key" '[2000,2010,2020,2030,2040,2045,2050]'
 
-jf_apikey=$(jellyfin_api_key "$token") || die "khong tao duoc Jellyfin API key"
-[ -n "$jf_apikey" ] && [ "$jf_apikey" != "null" ] || die "Jellyfin API key trong"
+jf_apikey=$(jellyfin_api_key "$token") || die "can't create Jellyfin API key"
+[ -n "$jf_apikey" ] && [ "$jf_apikey" != "null" ] || die "Jellyfin API key is empty"
 ensure_arr_jellyfin "Sonarr" "$SONARR_URL" "$sonarr_key" "$jf_apikey"
 ensure_arr_jellyfin "Radarr" "$RADARR_URL" "$radarr_key" "$jf_apikey"
 
-log "xong"
+log "Done"
