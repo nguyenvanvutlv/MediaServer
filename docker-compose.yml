@@ -1,10 +1,27 @@
 services:
+  init-dirs:
+    image: alpine:3.21
+    container_name: mediaserver-init-dirs
+    user: "0:0"
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+    volumes:
+      - ./config:/config
+      - ./media:/media
+      - ./scripts/setup-dirs-container.sh:/setup-dirs.sh:ro
+    entrypoint: ["/bin/sh", "/setup-dirs.sh"]
+    restart: "no"
+
   jellyfin:
     image: lscr.io/linuxserver/jellyfin:latest
     container_name: jellyfin
+    depends_on:
+      init-dirs:
+        condition: service_completed_successfully
     environment:
-      - PUID=501
-      - PGID=20
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
       - TZ=${TZ}
     volumes:
       - ./config/jellyfin:/config
@@ -18,9 +35,12 @@ services:
     image: lscr.io/linuxserver/plex:latest
     container_name: plex
     hostname: plex
+    depends_on:
+      init-dirs:
+        condition: service_completed_successfully
     environment:
-      - PUID=501
-      - PGID=20
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
       - TZ=${TZ}
       - VERSION=docker
       - PLEX_CLAIM=${PLEX_CLAIM:-}
@@ -42,9 +62,12 @@ services:
   sonarr:
     image: lscr.io/linuxserver/sonarr:latest
     container_name: sonarr
+    depends_on:
+      init-dirs:
+        condition: service_completed_successfully
     environment:
-      - PUID=501
-      - PGID=20
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
       - TZ=${TZ}
     volumes:
       - ./config/sonarr:/config
@@ -57,9 +80,12 @@ services:
   radarr:
     image: lscr.io/linuxserver/radarr:latest
     container_name: radarr
+    depends_on:
+      init-dirs:
+        condition: service_completed_successfully
     environment:
-      - PUID=501
-      - PGID=20
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
       - TZ=${TZ}
     volumes:
       - ./config/radarr:/config
@@ -72,9 +98,12 @@ services:
   nzbget:
     image: nzbgetcom/nzbget:latest
     container_name: nzbget
+    depends_on:
+      init-dirs:
+        condition: service_completed_successfully
     environment:
-      - PUID=501
-      - PGID=20
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
       - TZ=${TZ}
       - NZBGET_USER=${NZBGET_USER}
       - NZBGET_PASS=${NZBGET_PASS}
@@ -90,16 +119,22 @@ services:
     image: alpine:3.21
     container_name: mediaserver-bootstrap
     depends_on:
-      - jellyfin
-      - sonarr
-      - radarr
-      - nzbget
+      init-dirs:
+        condition: service_completed_successfully
+      jellyfin:
+        condition: service_started
+      sonarr:
+        condition: service_started
+      radarr:
+        condition: service_started
+      nzbget:
+        condition: service_started
     environment:
       - TZ=${TZ}
       - JELLYFIN_USERNAME=${JELLYFIN_USERNAME}
       - JELLYFIN_PASSWORD=${JELLYFIN_PASSWORD}
-      - MOVIE_PATH=${MOVIE_PATH}
-      - SHOW_PATH=${SHOW_PATH}
+      - MOVIE_PATH=${MOVIE_PATH:-/media/movie}
+      - SHOW_PATH=${SHOW_PATH:-/media/show}
       - NZBGET_USER=${NZBGET_USER}
       - NZBGET_PASS=${NZBGET_PASS}
       - NZBGET_NEWS_HOST=${NZBGET_NEWS_HOST:-}
@@ -117,6 +152,7 @@ services:
       - ./config/sonarr:/sonarr:ro
       - ./config/radarr:/radarr:ro
       - ./config/nzbget:/nzbget
+      - ./media:/media
       - ./media/downloads:/downloads
     entrypoint: ["/bin/sh", "/bootstrap.sh"]
     restart: "no"

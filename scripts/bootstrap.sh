@@ -218,8 +218,10 @@ wait_nzbget() {
   die "timeout NZBGet"
 }
 
-ensure_download_dirs() {
+ensure_media_dirs() {
   mkdir -p \
+    "$MOVIE_PATH" \
+    "$SHOW_PATH" \
     /downloads/completed/Movies \
     /downloads/completed/Series \
     /downloads/completed/Music \
@@ -227,7 +229,19 @@ ensure_download_dirs() {
     /downloads/intermediate \
     /downloads/nzb \
     /downloads/queue \
-    /downloads/tmp
+    /downloads/tmp \
+    /media/downloads/completed/Movies \
+    /media/downloads/completed/Series
+  # Soft check: arr apps must be able to see these paths.
+  [ -d "$MOVIE_PATH" ] || die "movie path missing: $MOVIE_PATH (host: ./media/movie)"
+  [ -d "$SHOW_PATH" ] || die "show path missing: $SHOW_PATH (host: ./media/show)"
+  [ -w "$MOVIE_PATH" ] || log "WARNING: $MOVIE_PATH not writable in bootstrap (ok if owned by PUID)"
+  [ -w "$SHOW_PATH" ] || log "WARNING: $SHOW_PATH not writable in bootstrap (ok if owned by PUID)"
+  log "media paths ready: $MOVIE_PATH , $SHOW_PATH"
+}
+
+ensure_download_dirs() {
+  ensure_media_dirs
   nzbget_apply_config \
     ControlUsername "$NZBGET_USER" \
     ControlPassword "$NZBGET_PASS" \
@@ -445,12 +459,15 @@ ensure_nzbget_news_server
 log "wait Jellyfin ready"
 wait_url "$JELLYFIN_URL/System/Info/Public"
 
-wizard_done=$(curl -s --max-time 10 "$JELLYFIN_URL/System/Info/Public" | jq -r '.StartupWizardCompleted // empty')
+# Give Jellyfin a moment after /System/Info/Public becomes reachable.
+sleep 5
+wizard_done=$(curl -s --max-time 10 "$JELLYFIN_URL/System/Info/Public" | jq -r '.StartupWizardCompleted // empty' || true)
 if [ "$wizard_done" != "true" ]; then
-  log "hoan tat setup wizard Jellyfin"
-  curl -sf --max-time 15 -X POST "$JELLYFIN_URL/Startup/Configuration" \
+  log "complete Jellyfin setup wizard"
+  # Do not use curl -f here: wizard endpoints may return non-2xx when partially done.
+  curl -s --max-time 15 -X POST "$JELLYFIN_URL/Startup/Configuration" \
     -H "Content-Type: application/json" \
-    -d '{"UICulture":"en-US","MetadataCountryCode":"VN","PreferredMetadataLanguage":"en"}' >/dev/null
+    -d '{"UICulture":"en-US","MetadataCountryCode":"VN","PreferredMetadataLanguage":"en"}' >/dev/null || true
 
   curl -s --max-time 15 "$JELLYFIN_URL/Startup/User" >/dev/null || true
 
@@ -458,22 +475,24 @@ if [ "$wizard_done" != "true" ]; then
   user_code=$(curl -s -o /tmp/jf-user.json -w '%{http_code}' --max-time 15 -X POST \
     "$JELLYFIN_URL/Startup/User" \
     -H "Content-Type: application/json" \
-    -d "$user_body")
-  if [ "$user_code" != "204" ] && [ "$user_code" != "200" ]; then
-    die "can't user Jellyfin (HTTP $user_code): $(cat /tmp/jf-user.json)"
+    -d "$user_body" || echo "000")
+  if [ "$user_code" != "204" ] && [ "$user_code" != "200" ] && [ "$user_code" != "400" ]; then
+    die "can't create Jellyfin user (HTTP $user_code): $(cat /tmp/jf-user.json 2>/dev/null || true)"
   fi
 
   curl -s --max-time 15 -X POST "$JELLYFIN_URL/Startup/RemoteAccess" \
     -H "Content-Type: application/json" \
     -d '{"EnableRemoteAccess":true,"EnableAutomaticPortMapping":false}' >/dev/null || true
+else
+  log "Jellyfin wizard already completed"
 fi
 
-token=$(jellyfin_token) || die "can't Jellyfin. Check JELLYFIN_USERNAME / JELLYFIN_PASSWORD in .env"
+token=$(jellyfin_token) || die "can't auth Jellyfin. Check JELLYFIN_USERNAME / JELLYFIN_PASSWORD in .env"
 ensure_jellyfin_library "Movies" "movies" "$MOVIE_PATH" "$token"
 ensure_jellyfin_library "Shows" "tvshows" "$SHOW_PATH" "$token"
 
 if [ "$wizard_done" != "true" ]; then
-  curl -sf --max-time 15 -X POST "$JELLYFIN_URL/Startup/Complete" >/dev/null
+  curl -s --max-time 15 -X POST "$JELLYFIN_URL/Startup/Complete" >/dev/null || true
   log "Jellyfin wizard completed"
 fi
 
