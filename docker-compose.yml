@@ -59,6 +59,26 @@ services:
       start_period: 90s
     restart: unless-stopped
 
+
+  emby:
+    image: lscr.io/linuxserver/emby:latest
+    container_name: emby
+    depends_on:
+      init-dirs:
+        condition: service_completed_successfully
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ}
+    volumes:
+      - ./config/emby:/config
+      - ./media/movie:/media/movie:ro
+      - ./media/show:/media/show:ro
+    ports:
+      - "8097:8096"
+    restart: unless-stopped
+
+
   sonarr:
     image: lscr.io/linuxserver/sonarr:latest
     container_name: sonarr
